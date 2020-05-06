@@ -75,7 +75,8 @@ type PainterOptions = {
     zooming: boolean,
     moving: boolean,
     gpuTiming: boolean,
-    fadeDuration: number
+    fadeDuration: number,
+    speedIndexTiming: boolean
 }
 
 /**
@@ -125,11 +126,14 @@ class Painter {
     emptyTexture: Texture;
     debugOverlayTexture: Texture;
     debugOverlayCanvas: HTMLCanvasElement;
+    tileLoaed: boolean;
+    pixelArrays: Array<Uint8Array>;
 
     constructor(gl: WebGLRenderingContext, transform: Transform) {
         this.context = new Context(gl);
         this.transform = transform;
         this._tileTextures = {};
+        this.pixelArrays = [];
 
         this.setup();
 
@@ -479,6 +483,11 @@ class Painter {
         // Set defaults for most GL values so that anyone using the state after the render
         // encounters more expected values.
         this.context.setDefault();
+
+        // where we want to save a copy. we need info on a tile is loaded or not.
+        if (this.tileLoaed && this.options.speedIndexTiming) {
+            this.saveCanvasCopy();
+        }
     }
 
     renderLayer(painter: Painter, sourceCache: SourceCache, layer: StyleLayer, coords: Array<OverscaledTileID>) {
@@ -584,7 +593,7 @@ class Painter {
     /**
      * Checks whether a pattern image is needed, and if it is, whether it is not loaded.
      *
-     * @returns true if a needed image is missing and rendering needs to be skipped.
+* @returns true if a needed image is missing and rendering needs to be skipped.
      * @private
      */
     isPatternMissing(image: ?CrossFaded<ResolvedImage>): boolean {
@@ -648,6 +657,26 @@ class Painter {
         if (this.debugOverlayTexture) {
             this.debugOverlayTexture.destroy();
         }
+    }
+
+    setTileLoadedFlag(flag: boolean) {
+        this.tileLoaed = flag;
+    }
+
+    saveCanvasCopy() {
+        this.pixelArrays.push(this.canvasCopy());
+        this.tileLoaed = false;
+    }
+
+    canvasCopy(): Uint8Array {
+        const gl = this.context.gl;
+        const pixels = new Uint8Array(gl.drawingBufferWidth * gl.drawingBufferHeight * 4);
+        gl.readPixels(0, 0, gl.drawingBufferWidth, gl.drawingBufferHeight, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
+        return pixels;
+    }
+
+    getCanvasCopies(): Uint8Array[] {
+        return this.pixelArrays;
     }
 }
 

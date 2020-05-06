@@ -308,6 +308,7 @@ class Map extends Camera {
     _requestManager: RequestManager;
     _locale: Object;
     _removed: boolean;
+    _speedIndexTiming: boolean;
 
     /**
      * The map's {@link ScrollZoomHandler}, which implements zooming in and out with a scroll wheel or trackpad.
@@ -2322,6 +2323,15 @@ class Map extends Camera {
         }
 
         this.painter = new Painter(gl, this.transform);
+        this.on('data', (event: MapDataEvent) => {
+            if (event.dataType === 'source') {
+                console.log(event);
+                this.painter.setTileLoadedFlag(true);
+            } else {
+                console.log(event);
+                this.painter.setTileLoadedFlag(false);
+            }
+        });
 
         webpSupported.testSupport(gl);
     }
@@ -2465,6 +2475,7 @@ class Map extends Camera {
             fadeDuration: this._fadeDuration,
             showPadding: this.showPadding,
             gpuTiming: !!this.listens('gpu-timing-layer'),
+            speedIndexTiming: this.speedIndexTiming,
         });
 
         this.fire(new Event('render'));
@@ -2527,9 +2538,40 @@ class Map extends Camera {
                 PerformanceUtils.mark(PerformanceMarkers.fullLoad);
             }
             this.fire(new Event('idle'));
+            const finalFrame = this.painter.canvasCopy();
+            const canvasCopies = this.painter.getCanvasCopies();
+            const speedIndex = this.canvasPixelComparison(finalFrame, canvasCopies);
+            console.log(speedIndex);
         }
 
         return this;
+    }
+
+    canvasPixelComparison(finalFrame: Uint8Array, allFrames: Uint8Array[]): number {
+        let finalScore = 0.0;
+        const numPixels = finalFrame.length / 4;
+        const visitedPixels = [];
+        for (let i = 0; i < numPixels; i++) {
+            visitedPixels.push(false);
+        }
+        for (let i = 0; i < allFrames.length; i++) {
+            const frame = allFrames[i];
+            let cnt = 0;
+            for (let j = 0; j < frame.length; j += 4) {
+                // not sure if we need to check alpha value
+                if (!visitedPixels[j] && frame[j] === finalFrame[j] &&
+                    frame[j + 1] === finalFrame[j + 1] &&
+                    frame[j + 2] === finalFrame[j + 2] &&
+                    frame[j + 3] === finalFrame[j + 3]) {
+                    // mark those pixels as visited
+                    visitedPixels[j] = true;
+                    cnt = cnt + 1;
+                }
+            }
+            //calculate the % of pixels that match the final frame.
+            finalScore += (1 - cnt / numPixels);
+        }
+        return finalScore;
     }
 
     /**
@@ -2622,6 +2664,23 @@ class Map extends Camera {
     set showTileBoundaries(value: boolean) {
         if (this._showTileBoundaries === value) return;
         this._showTileBoundaries = value;
+        this._update();
+    }
+
+    /**
+     * Gets and sets a Boolean indicating whether the speedindex metric calculation is on or off
+     *
+     * @name speedIndexTiming
+     * @type {boolean}
+     * @instance
+     * @memberof Map
+     * @example
+     * map.speedIndexTiming = true;
+     */
+    get speedIndexTiming(): boolean { return !!this._speedIndexTiming; }
+    set speedIndexTiming(value: boolean) {
+        if (this._speedIndexTiming === value) return;
+        this._speedIndexTiming = value;
         this._update();
     }
 
